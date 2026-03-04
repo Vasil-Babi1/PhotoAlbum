@@ -1,0 +1,89 @@
+/* static/styles.css */
+
+:root{
+  --shadow2: 0 6px 18px rgba(0,0,0,.07);
+}
+
+body{
+  background:
+    radial-gradient(1200px 600px at 20% 0%, rgba(59,130,246,.12), transparent 60%),
+    radial-gradient(1000px 500px at 85% 10%, rgba(251,191,36,.14), transparent 55%),
+    radial-gradient(900px 450px at 60% 95%, rgba(167,139,250,.12), transparent 55%),
+    #f8fafc;
+}
+
+.shadow-soft{ box-shadow: var(--shadow2); }
+
+.hero{
+  position: relative;
+  border: 1px solid rgba(255,255,255,.12);
+}
+
+.hero-glow{
+  position:absolute;
+  inset:-40px;
+  background:
+    radial-gradient(520px 260px at 20% 20%, rgba(34,211,238,.40), transparent 60%),
+    radial-gradient(520px 260px at 75% 25%, rgba(251,191,36,.34), transparent 60%),
+    radial-gradient(520px 260px at 60% 80%, rgba(167,139,250,.30), transparent 60%);
+  filter: blur(14px);
+  opacity: .95;
+  pointer-events: none;
+}
+
+
+.step{
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  padding: 10px 0;
+  border-bottom: 1px dashed rgba(0,0,0,.12);
+}
+.step:last-child{ border-bottom: none; }
+
+.step-icon{
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: linear-gradient(135deg, rgba(34,211,238,.45), rgba(167,139,250,.35));
+  color: #0f172a;
+}
+
+.feature{
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.feature:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 14px 35px rgba(0,0,0,.10);
+}
+
+.feature-icon{
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: linear-gradient(135deg, rgba(251,191,36,.40), rgba(96,165,250,.35));
+  color: #0f172a;
+  font-size: 20px;
+}
+
+.feature:nth-child(1){
+  background: linear-gradient(180deg, rgba(34,211,238,.12), rgba(255,255,255,.70));
+}
+.feature:nth-child(2){
+  background: linear-gradient(180deg, rgba(167,139,250,.12), rgba(255,255,255,.70));
+}
+.feature:nth-child(3){
+  background: linear-gradient(180deg, rgba(251,191,36,.12), rgba(255,255,255,.70));
+}
+
+.footer-soft{
+  border-top: 1px solid rgba(0,0,0,.08);
+  background: rgba(255,255,255,.65);
+  backdrop-filter: blur(6px);
+}
