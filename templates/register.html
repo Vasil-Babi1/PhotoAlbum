@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Реєстрація | PhotoAlbum{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6 col-lg-5">
+    <div class="card border-0 rounded-4 shadow-soft auth-card">
+      <div class="card-body p-4 p-md-5">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <div class="auth-icon auth-icon-alt"><i class="bi bi-person-plus"></i></div>
+          <div>
+            <h3 class="mb-0">Реєстрація</h3>
+            <div class="text-muted small">Створіть акаунт, щоб зберігати свої фото</div>
+          </div>
+        </div>
+
+        <form method="post">
+          <div class="mb-3">
+            <label class="form-label">Нікнейм</label>
+            <input class="form-control form-control-lg" type="text" name="nickname" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input class="form-control form-control-lg" type="email" name="email" placeholder="example@gmail.com" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Пароль</label>
+            <input class="form-control form-control-lg" type="password" name="password" placeholder="Мінімум 6 символів" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Повторіть пароль</label>
+            <input class="form-control form-control-lg" type="password" name="password2" placeholder="••••••••" required>
+          </div>
+
+          <button class="btn btn-dark btn-lg w-100" type="submit">
+            Зареєструватися
+          </button>
+
+          <div class="text-center mt-3">
+            <span class="text-muted small">Вже є акаунт?</span>
+            <a href="/login" class="small fw-semibold">Увійти</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

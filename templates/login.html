@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Вхід | PhotoAlbum{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6 col-lg-5">
+    <div class="card border-0 rounded-4 shadow-soft auth-card">
+      <div class="card-body p-4 p-md-5">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <div class="auth-icon"><i class="bi bi-box-arrow-in-right"></i></div>
+          <div>
+            <h3 class="mb-0">Вхід</h3>
+            <div class="text-muted small">Увійдіть, щоб відкрити свій альбом</div>
+          </div>
+        </div>
+
+        <form method="post">
+          <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input class="form-control form-control-lg" type="email" name="email" placeholder="example@gmail.com" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Пароль</label>
+            <input class="form-control form-control-lg" type="password" name="password" placeholder="••••••••" required>
+          </div>
+
+          <button class="btn btn-dark btn-lg w-100" type="submit">
+            Увійти
+          </button>
+
+          <div class="text-center mt-3">
+            <span class="text-muted small">Ще немає акаунта?</span>
+            <a href="/register" class="small fw-semibold">Реєстрація</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

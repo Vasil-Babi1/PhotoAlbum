@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Головна | Фотоальбом{% endblock %}
+{% block title %}Головна | PhotoAlbum{% endblock %}
 
 {% block content %}
 <div class="hero bg-dark text-white p-4 p-md-5 rounded-4 shadow-soft overflow-hidden position-relative">
@@ -8,25 +8,25 @@
   <div class="row align-items-center g-4 position-relative">
     <div class="col-lg-7">
       <h1 class="display-6 fw-bold mb-3">
-        Твій особистий фотоальбом — приватно і зручно
+        Твій особистий фотоальбом — <span class="hero-accent">приватно</span> і зручно
       </h1>
 
       <p class="lead mb-4 text-white-50">
         Створюй папки та вкладені папки, завантажуй фото і переглядай їх тільки у своєму акаунті.
-        Файли будуть зберігатися у хмарному середовиші.
+        Файли будуть зберігатися у хмарному середовищі.
       </p>
 
       <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-light btn-lg px-4" href="#" title="Додамо на наступному кроці">
+        <a class="btn btn-light btn-lg px-4" href="/login">
           <i class="bi bi-box-arrow-in-right me-2"></i>Увійти
         </a>
-        <a class="btn btn-outline-light btn-lg px-4" href="#" title="Додамо на наступному кроці">
+        <a class="btn btn-outline-light btn-lg px-4" href="/register">
           <i class="bi bi-person-plus me-2"></i>Реєстрація
         </a>
       </div>
 
       <div class="mt-4 d-flex flex-wrap gap-3 small text-white-50">
-        <div><i class="bi bi-shield-check me-1"></i>Доступ тільки до своїх фото</div>
+        <div><i class="bi bi-shield-check me-1"></i>Доступ тільки свої</div>
         <div><i class="bi bi-folder-fill me-1"></i>Папки в папках</div>
         <div><i class="bi bi-lightning-charge me-1"></i>Швидке завантаження</div>
       </div>
