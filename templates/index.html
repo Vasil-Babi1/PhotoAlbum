@@ -8,25 +8,31 @@
   <div class="row align-items-center g-4 position-relative">
     <div class="col-lg-7">
       <h1 class="display-6 fw-bold mb-3">
-        Твій особистий фотоальбом — <span class="hero-accent">приватно</span> і зручно
+        Ваш особистий фотоальбом — приватно і зручно
       </h1>
 
       <p class="lead mb-4 text-white-50">
-        Створюй папки та вкладені папки, завантажуй фото і переглядай їх тільки у своєму акаунті.
+        Створюйте папки та вкладені папки, завантажуйте фото і переглядайте їх тільки у своєму акаунті.
         Файли будуть зберігатися у хмарному середовищі.
       </p>
 
       <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-light btn-lg px-4" href="/login">
-          <i class="bi bi-box-arrow-in-right me-2"></i>Увійти
-        </a>
-        <a class="btn btn-outline-light btn-lg px-4" href="/register">
-          <i class="bi bi-person-plus me-2"></i>Реєстрація
-        </a>
+        {% if current_user.is_authenticated %}
+          <a class="btn btn-light btn-lg px-4" href="/album">
+            <i class="bi bi-collection me-2"></i>Перейти у мій альбом
+          </a>
+        {% else %}
+          <a class="btn btn-light btn-lg px-4" href="/login">
+            <i class="bi bi-box-arrow-in-right me-2"></i>Увійти
+          </a>
+          <a class="btn btn-outline-light btn-lg px-4" href="/register">
+            <i class="bi bi-person-plus me-2"></i>Реєстрація
+          </a>
+        {% endif %}
       </div>
 
       <div class="mt-4 d-flex flex-wrap gap-3 small text-white-50">
-        <div><i class="bi bi-shield-check me-1"></i>Доступ тільки свої</div>
+        <div><i class="bi bi-shield-check me-1"></i>Доступ тільки до своїх фото</div>
         <div><i class="bi bi-folder-fill me-1"></i>Папки в папках</div>
         <div><i class="bi bi-lightning-charge me-1"></i>Швидке завантаження</div>
       </div>
@@ -49,7 +55,7 @@
             <div class="step-icon"><i class="bi bi-folder-plus"></i></div>
             <div>
               <div class="fw-semibold">2) Створення папок</div>
-              <div class="text-muted small">Групування фото по папках.</div>
+              <div class="text-muted small">Групуйте фото по папках.</div>
             </div>
           </div>
 
@@ -57,7 +63,7 @@
             <div class="step-icon"><i class="bi bi-cloud-upload"></i></div>
             <div>
               <div class="fw-semibold">3) Завантаження фото</div>
-              <div class="text-muted small">Файли зберігаються у хмарі.</div>
+              <div class="text-muted small">Завантажуйте та зберігайте фото у хмарі.</div>
             </div>
           </div>
 
