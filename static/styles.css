@@ -115,3 +115,10 @@ body{
   opacity: 0.7;
   line-height: 54px;
 }
+.empty-box{
+  border: 1px dashed rgba(0,0,0,.18);
+  border-radius: 16px;
+  padding: 22px;
+  text-align: center;
+  background: rgba(255,255,255,.55);
+}

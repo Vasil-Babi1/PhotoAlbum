@@ -163,8 +163,7 @@ def logout():
 @app.route("/album")
 @login_required
 def album():
-
-    return "<h2>Album page (coming soon)</h2>"
+    return render_template("album.html")
 
 
 if __name__ == "__main__":
