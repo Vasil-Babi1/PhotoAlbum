@@ -4,16 +4,36 @@
 {% block content %}
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
   <div>
-    <h2 class="mb-1">Мій альбом</h2>
-    <div class="text-muted">
-      Привіт, <b>{{ current_user.nickname }}</b> 👋 Тут будуть твої папки та фотографії.
-    </div>
+    <h2 class="mb-1">
+      Мій альбом
+      {% if current_folder %}
+        <span class="text-muted">/</span> {{ current_folder["name"] }}
+      {% endif %}
+    </h2>
+
+    {% if breadcrumbs and current_folder %}
+      <div class="small text-muted">
+        <a href="/album" class="text-decoration-none">Головна</a>
+        {% for f in breadcrumbs %}
+          {% if loop.last %}
+            <span> / {{ f["name"] }}</span>
+          {% else %}
+            <span> / <a class="text-decoration-none" href="/album/{{ f['id'] }}">{{ f["name"] }}</a></span>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted">
+        Привіт, <b>{{ current_user.nickname }}</b> 👋 Тут будуть твої папки та фотографії.
+      </div>
+    {% endif %}
   </div>
 
-  <div class="d-flex flex-wrap gap-2">
-    <button class="btn btn-dark" disabled>
+  <div class="d-flex flex-wrap gap-3">
+    <button class="btn btn-dark" type="button" data-bs-toggle="modal" data-bs-target="#createFolderModal">
       <i class="bi bi-folder-plus me-2"></i>Створити папку
     </button>
+
     <button class="btn btn-outline-dark" disabled>
       <i class="bi bi-cloud-arrow-up me-2"></i>Завантажити фото
     </button>
@@ -21,34 +41,69 @@
 </div>
 
 <div class="row g-3">
-  <div class="col-lg-4">
+  <div class="col-lg-5">
     <div class="card border-0 rounded-4 shadow-soft h-100">
       <div class="card-body p-4">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <div class="fw-semibold"><i class="bi bi-folder2-open me-2"></i>Папки</div>
-          <span class="text-muted small">0</span>
-        </div>
-        <div class="text-muted small mb-3">
-          Тут будуть твої папки.
+          <span class="text-muted small">{{ folders|length }}</span>
         </div>
 
-        <div class="empty-box">
-          <i class="bi bi-folder2 text-muted fs-3"></i>
-          <div class="mt-2 text-muted">Поки що папок немає</div>
-        </div>
+        {% if folders|length == 0 %}
+          <div class="empty-box">
+            <i class="bi bi-folder2 text-muted fs-3"></i>
+            <div class="mt-2 text-muted">Поки що папок немає</div>
+          </div>
+        {% else %}
+          <div class="list-group list-group-flush">
+            {% for f in folders %}
+              <div class="list-group-item d-flex justify-content-between align-items-center">
+                <a class="text-decoration-none d-flex align-items-center gap-2" href="/album/{{ f['id'] }}">
+                  <i class="bi bi-folder-fill"></i>
+                  <span>{{ f["name"] }}</span>
+                </a>
+
+                <div class="d-flex gap-2">
+                  <button
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm"
+                    data-bs-toggle="modal"
+                    data-bs-target="#renameFolderModal"
+                    data-folder-id="{{ f['id'] }}"
+                    data-folder-name="{{ f['name'] }}"
+                    title="Перейменувати">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="btn btn-outline-danger btn-sm"
+                    data-bs-toggle="modal"
+                    data-bs-target="#deleteFolderModal"
+                    data-folder-id="{{ f['id'] }}"
+                    data-folder-name="{{ f['name'] }}"
+                    title="Видалити">
+                    <i class="bi bi-trash"></i>
+                  </button>
+
+                  <a class="btn btn-outline-secondary btn-sm" href="/album/{{ f['id'] }}" title="Відкрити">
+                    <i class="bi bi-chevron-right"></i>
+                  </a>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
       </div>
     </div>
   </div>
 
-  <div class="col-lg-8">
+  <div class="col-lg-7">
     <div class="card border-0 rounded-4 shadow-soft h-100">
       <div class="card-body p-4">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <div class="fw-semibold"><i class="bi bi-images me-2"></i>Фотографії</div>
           <span class="text-muted small">0</span>
-        </div>
-        <div class="text-muted small mb-3">
-          Тут будуть твої завантажені фото.
         </div>
 
         <div class="empty-box">
@@ -59,4 +114,124 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="createFolderModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title">Нова папка</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body pt-2">
+        <form method="post" action="/folders/create" id="createFolderForm">
+          {% if current_folder %}
+            <input type="hidden" name="parent_id" value="{{ current_folder['id'] }}">
+          {% else %}
+            <input type="hidden" name="parent_id" value="">
+          {% endif %}
+
+          <label class="form-label small text-muted">Назва папки</label>
+          <input class="form-control form-control-sm" id="folderNameInput" type="text" name="name"
+                 placeholder="Напр. Подорожі" required>
+        </form>
+      </div>
+
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Скасувати</button>
+        <button type="submit" form="createFolderForm" class="btn btn-dark">Створити</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="renameFolderModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title">Перейменувати папку</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body pt-2">
+        <form method="post" id="renameFolderForm">
+          <label class="form-label small text-muted">Нова назва</label>
+          <input class="form-control form-control-sm" id="renameFolderInput" type="text" name="name" required>
+        </form>
+      </div>
+
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Скасувати</button>
+        <button type="submit" form="renameFolderForm" class="btn btn-dark">Зберегти</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal fade" id="deleteFolderModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title">Видалити папку</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body pt-2">
+        <div class="text-muted">
+          Ви точно хочете видалити папку: <b id="deleteFolderName"></b> ?
+        </div>
+        <div class="small text-danger mt-2">
+          Увага: буде видалено також всі вкладені підпапки.
+        </div>
+        <form method="post" id="deleteFolderForm"></form>
+      </div>
+
+      <div class="modal-footer border-0 pt-0">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Скасувати</button>
+        <button type="submit" form="deleteFolderForm" class="btn btn-danger">Видалити</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const createModalEl = document.getElementById('createFolderModal');
+  const createInputEl = document.getElementById('folderNameInput');
+  createModalEl.addEventListener('shown.bs.modal', function () {
+    createInputEl.value = "";
+    createInputEl.focus();
+  });
+
+  const renameModalEl = document.getElementById('renameFolderModal');
+  const renameInput = document.getElementById('renameFolderInput');
+  const renameForm = document.getElementById('renameFolderForm');
+
+  renameModalEl.addEventListener('show.bs.modal', function (event) {
+    const btn = event.relatedTarget;
+    const id = btn.getAttribute('data-folder-id');
+    const name = btn.getAttribute('data-folder-name');
+
+    renameInput.value = name;
+    renameForm.action = "/folders/rename/" + id;
+  });
+
+  renameModalEl.addEventListener('shown.bs.modal', function () {
+    renameInput.focus();
+    renameInput.select();
+  });
+
+  const deleteModalEl = document.getElementById('deleteFolderModal');
+  const deleteNameEl = document.getElementById('deleteFolderName');
+  const deleteForm = document.getElementById('deleteFolderForm');
+
+  deleteModalEl.addEventListener('show.bs.modal', function (event) {
+    const btn = event.relatedTarget;
+    const id = btn.getAttribute('data-folder-id');
+    const name = btn.getAttribute('data-folder-name');
+
+    deleteNameEl.textContent = name;
+    deleteForm.action = "/folders/delete/" + id;
+  });
+</script>
 {% endblock %}

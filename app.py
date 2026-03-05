@@ -1,13 +1,12 @@
 import sqlite3
-import re
 from pathlib import Path
 
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, abort
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = "CHANGE_ME_SECRET_KEY"
+app.secret_key = "CHANGE_ME_SECRET_KEY"  # потім винесемо в env
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "database.sqlite"
@@ -22,6 +21,7 @@ def get_db():
 def init_db():
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,6 +31,17 @@ def init_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
     """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            parent_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
     conn.commit()
     conn.close()
 
@@ -55,6 +66,41 @@ def load_user(user_id: str):
     if row:
         return User(row)
     return None
+
+
+def get_folder_owned(folder_id: int, user_id: int):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM folders WHERE id = ? AND user_id = ?",
+        (folder_id, user_id)
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_breadcrumbs(folder_row):
+    crumbs = []
+    current = folder_row
+    while current is not None:
+        crumbs.append(current)
+        pid = current["parent_id"]
+        if pid is None:
+            break
+        current = get_folder_owned(pid, current["user_id"])
+    crumbs.reverse()
+    return crumbs
+
+
+def delete_folder_recursive(conn, folder_id: int, user_id: int):
+    children = conn.execute(
+        "SELECT id FROM folders WHERE user_id = ? AND parent_id = ?",
+        (user_id, folder_id)
+    ).fetchall()
+
+    for c in children:
+        delete_folder_recursive(conn, c["id"], user_id)
+
+    conn.execute("DELETE FROM folders WHERE id = ? AND user_id = ?", (folder_id, user_id))
 
 
 @app.route("/")
@@ -90,20 +136,20 @@ def register():
             return redirect(url_for("register"))
 
         conn = get_db()
-
         exists_email = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
         exists_nick = conn.execute("SELECT id FROM users WHERE nickname = ?", (nickname,)).fetchone()
+
         if exists_email:
             conn.close()
             flash("Такий email вже зареєстрований.", "error")
             return redirect(url_for("register"))
+
         if exists_nick:
             conn.close()
             flash("Такий нікнейм вже зайнятий.", "error")
             return redirect(url_for("register"))
 
         password_hash = generate_password_hash(password)
-
         conn.execute(
             "INSERT INTO users (nickname, email, password_hash) VALUES (?, ?, ?)",
             (nickname, email, password_hash)
@@ -113,9 +159,7 @@ def register():
         row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         conn.close()
 
-        user = User(row)
-        login_user(user)
-
+        login_user(User(row))
         flash("Реєстрація успішна! Ви увійшли в акаунт.", "success")
         return redirect(url_for("index"))
 
@@ -135,18 +179,12 @@ def login():
         row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
         conn.close()
 
-        if not row:
+        if not row or not check_password_hash(row["password_hash"], password):
             flash("Неправильний email або пароль.", "error")
             return redirect(url_for("login"))
 
-        if not check_password_hash(row["password_hash"], password):
-            flash("Неправильний email або пароль.", "error")
-            return redirect(url_for("login"))
-
-        user = User(row)
-        login_user(user)
-
-        flash(f"Вітаю, {user.nickname}!", "success")
+        login_user(User(row))
+        flash(f"Вітаю, {row['nickname']}!", "success")
         return redirect(url_for("index"))
 
     return render_template("login.html")
@@ -163,7 +201,112 @@ def logout():
 @app.route("/album")
 @login_required
 def album():
-    return render_template("album.html")
+    user_id = current_user.id
+    conn = get_db()
+    folders = conn.execute(
+        "SELECT * FROM folders WHERE user_id = ? AND parent_id IS NULL ORDER BY created_at DESC",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+
+    return render_template("album.html", folders=folders, current_folder=None, breadcrumbs=[])
+
+
+@app.route("/album/<int:folder_id>")
+@login_required
+def album_folder(folder_id):
+    user_id = current_user.id
+    current_folder = get_folder_owned(folder_id, user_id)
+    if not current_folder:
+        abort(404)
+
+    conn = get_db()
+    folders = conn.execute(
+        "SELECT * FROM folders WHERE user_id = ? AND parent_id = ? ORDER BY created_at DESC",
+        (user_id, folder_id)
+    ).fetchall()
+    conn.close()
+
+    breadcrumbs = get_breadcrumbs(current_folder)
+    return render_template("album.html", folders=folders, current_folder=current_folder, breadcrumbs=breadcrumbs)
+
+
+@app.route("/folders/create", methods=["POST"])
+@login_required
+def create_folder():
+    user_id = current_user.id
+    name = (request.form.get("name") or "").strip()
+    parent_id_raw = (request.form.get("parent_id") or "").strip()
+
+    if name == "":
+        flash("Назва папки не може бути порожньою.", "error")
+        return redirect(request.referrer or url_for("album"))
+
+    parent_id = None
+    if parent_id_raw != "":
+        try:
+            parent_id = int(parent_id_raw)
+        except ValueError:
+            flash("Некоректний parent_id.", "error")
+            return redirect(url_for("album"))
+
+        parent_folder = get_folder_owned(parent_id, user_id)
+        if not parent_folder:
+            flash("Немає доступу до цієї папки.", "error")
+            return redirect(url_for("album"))
+
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO folders (user_id, name, parent_id) VALUES (?, ?, ?)",
+        (user_id, name, parent_id)
+    )
+    conn.commit()
+    conn.close()
+
+    flash("Папку створено ✅", "success")
+    return redirect(request.referrer or url_for("album"))
+
+
+@app.route("/folders/rename/<int:folder_id>", methods=["POST"])
+@login_required
+def rename_folder(folder_id):
+    user_id = current_user.id
+    folder = get_folder_owned(folder_id, user_id)
+    if not folder:
+        abort(404)
+
+    new_name = (request.form.get("name") or "").strip()
+    if new_name == "":
+        flash("Нова назва не може бути порожньою.", "error")
+        return redirect(request.referrer or url_for("album"))
+
+    conn = get_db()
+    conn.execute(
+        "UPDATE folders SET name = ? WHERE id = ? AND user_id = ?",
+        (new_name, folder_id, user_id)
+    )
+    conn.commit()
+    conn.close()
+
+    flash("Папку перейменовано ✅", "success")
+    return redirect(request.referrer or url_for("album"))
+
+
+@app.route("/folders/delete/<int:folder_id>", methods=["POST"])
+@login_required
+def delete_folder(folder_id):
+    user_id = current_user.id
+    folder = get_folder_owned(folder_id, user_id)
+    if not folder:
+        abort(404)
+
+    conn = get_db()
+    delete_folder_recursive(conn, folder_id, user_id)
+    conn.commit()
+    conn.close()
+
+    flash("Папку видалено разом з усіма вкладеними папками ✅", "success")
+    return redirect(request.referrer or url_for("album"))
 
 
 if __name__ == "__main__":
