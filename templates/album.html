@@ -24,7 +24,7 @@
       </div>
     {% else %}
       <div class="text-muted">
-        Привіт, <b>{{ current_user.nickname }}</b> 👋 Тут будуть твої папки та фотографії.
+        Привіт, <b>{{ current_user.nickname }}</b> 👋 Тут твої папки та фотографії.
       </div>
     {% endif %}
   </div>
@@ -34,7 +34,7 @@
       <i class="bi bi-folder-plus me-2"></i>Створити папку
     </button>
 
-    <button class="btn btn-outline-dark" disabled>
+    <button class="btn btn-outline-dark" type="button" data-bs-toggle="modal" data-bs-target="#uploadPhotoModal">
       <i class="bi bi-cloud-arrow-up me-2"></i>Завантажити фото
     </button>
   </div>
@@ -64,25 +64,15 @@
                 </a>
 
                 <div class="d-flex gap-2">
-                  <button
-                    type="button"
-                    class="btn btn-outline-secondary btn-sm"
-                    data-bs-toggle="modal"
-                    data-bs-target="#renameFolderModal"
-                    data-folder-id="{{ f['id'] }}"
-                    data-folder-name="{{ f['name'] }}"
-                    title="Перейменувати">
+                  <button type="button" class="btn btn-outline-secondary btn-sm"
+                          data-bs-toggle="modal" data-bs-target="#renameFolderModal-{{ f['id'] }}"
+                          title="Перейменувати">
                     <i class="bi bi-pencil"></i>
                   </button>
 
-                  <button
-                    type="button"
-                    class="btn btn-outline-danger btn-sm"
-                    data-bs-toggle="modal"
-                    data-bs-target="#deleteFolderModal"
-                    data-folder-id="{{ f['id'] }}"
-                    data-folder-name="{{ f['name'] }}"
-                    title="Видалити">
+                  <button type="button" class="btn btn-outline-danger btn-sm"
+                          data-bs-toggle="modal" data-bs-target="#deleteFolderModal-{{ f['id'] }}"
+                          title="Видалити">
                     <i class="bi bi-trash"></i>
                   </button>
 
@@ -91,6 +81,54 @@
                   </a>
                 </div>
               </div>
+
+              <div class="modal fade" id="renameFolderModal-{{ f['id'] }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content rounded-4 border-0 shadow">
+                    <div class="modal-header border-0 pb-0">
+                      <h5 class="modal-title">Перейменувати папку</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body pt-2">
+                      <form method="post" action="/folders/rename/{{ f['id'] }}">
+                        <label class="form-label small text-muted">Нова назва</label>
+                        <input class="form-control form-control-sm" type="text" name="name" value="{{ f['name'] }}" required>
+                        <div class="d-flex justify-content-end gap-2 mt-3">
+                          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Скасувати</button>
+                          <button type="submit" class="btn btn-dark">Зберегти</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal fade" id="deleteFolderModal-{{ f['id'] }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content rounded-4 border-0 shadow">
+                    <div class="modal-header border-0 pb-0">
+                      <h5 class="modal-title">Видалити папку</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body pt-2">
+                      <div class="text-muted">
+                        Ви точно хочете видалити папку: <b>{{ f["name"] }}</b> ?
+                      </div>
+                      <div class="small text-danger mt-2">
+                        Увага: буде видалено також всі вкладені підпапки та фото в них.
+                      </div>
+
+                      <form method="post" action="/folders/delete/{{ f['id'] }}" class="mt-3">
+                        <div class="d-flex justify-content-end gap-2">
+                          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Скасувати</button>
+                          <button type="submit" class="btn btn-danger">Видалити</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             {% endfor %}
           </div>
         {% endif %}
@@ -103,13 +141,108 @@
       <div class="card-body p-4">
         <div class="d-flex align-items-center justify-content-between mb-2">
           <div class="fw-semibold"><i class="bi bi-images me-2"></i>Фотографії</div>
-          <span class="text-muted small">0</span>
+          <span class="text-muted small">{{ photos|length }}</span>
         </div>
 
-        <div class="empty-box">
-          <i class="bi bi-image text-muted fs-3"></i>
-          <div class="mt-2 text-muted">Поки що фото немає</div>
-        </div>
+        {% if photos|length == 0 %}
+          <div class="empty-box">
+            <i class="bi bi-image text-muted fs-3"></i>
+            <div class="mt-2 text-muted">Поки що фото немає</div>
+          </div>
+        {% else %}
+          <div class="row g-3">
+            {% for p in photos %}
+              {% set title = p["title"] if p["title"] else p["original_name"] %}
+              <div class="col-6 col-md-4">
+                <div class="card border-0 shadow-soft rounded-4 overflow-hidden">
+                  <img
+                    src="{{ url_for('photo_file', photo_id=p['id']) }}"
+                    alt="{{ title }}"
+                    role="button"
+                    data-bs-toggle="modal"
+                    data-bs-target="#viewPhotoModal-{{ p['id'] }}"
+                    style="width:100%; height:160px; object-fit:cover; cursor:pointer;">
+
+                  <div class="p-2">
+                    <div class="small text-muted text-truncate" title="{{ title }}">{{ title }}</div>
+
+                    <div class="d-flex gap-2 mt-2">
+                      <button type="button" class="btn btn-outline-secondary btn-sm w-100"
+                              data-bs-toggle="modal" data-bs-target="#renamePhotoModal-{{ p['id'] }}">
+                        <i class="bi bi-pencil me-1"></i>Назва
+                      </button>
+
+                      <button type="button" class="btn btn-outline-danger btn-sm"
+                              data-bs-toggle="modal" data-bs-target="#deletePhotoModal-{{ p['id'] }}">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal fade" id="viewPhotoModal-{{ p['id'] }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                  <div class="modal-content rounded-4 border-0 shadow">
+                    <div class="modal-header border-0 pb-0">
+                      <h5 class="modal-title">{{ title }}</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body pt-2">
+                      <img src="{{ url_for('photo_file', photo_id=p['id']) }}"
+                           alt="{{ title }}"
+                           style="width:100%; max-height:70vh; object-fit:contain;">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal fade" id="renamePhotoModal-{{ p['id'] }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content rounded-4 border-0 shadow">
+                    <div class="modal-header border-0 pb-0">
+                      <h5 class="modal-title">Перейменувати фото</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body pt-2">
+                      <form method="post" action="/photos/rename/{{ p['id'] }}">
+                        <label class="form-label small text-muted">Нова назва</label>
+                        <input class="form-control form-control-sm" type="text" name="title" value="{{ title }}" required>
+                        <div class="d-flex justify-content-end gap-2 mt-3">
+                          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Скасувати</button>
+                          <button type="submit" class="btn btn-dark">Зберегти</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="modal fade" id="deletePhotoModal-{{ p['id'] }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content rounded-4 border-0 shadow">
+                    <div class="modal-header border-0 pb-0">
+                      <h5 class="modal-title">Видалити фото</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body pt-2">
+                      <div class="text-muted">
+                        Ви точно хочете видалити фото: <b>{{ title }}</b> ?
+                      </div>
+                      <form method="post" action="/photos/delete/{{ p['id'] }}" class="mt-3">
+                        <div class="d-flex justify-content-end gap-2">
+                          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Скасувати</button>
+                          <button type="submit" class="btn btn-danger">Видалити</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            {% endfor %}
+          </div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -145,51 +278,31 @@
   </div>
 </div>
 
-<div class="modal fade" id="renameFolderModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="uploadPhotoModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content rounded-4 border-0 shadow">
       <div class="modal-header border-0 pb-0">
-        <h5 class="modal-title">Перейменувати папку</h5>
+        <h5 class="modal-title">Завантажити фото</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
 
       <div class="modal-body pt-2">
-        <form method="post" id="renameFolderForm">
-          <label class="form-label small text-muted">Нова назва</label>
-          <input class="form-control form-control-sm" id="renameFolderInput" type="text" name="name" required>
+        <form method="post" action="/photos/upload" id="uploadPhotoForm" enctype="multipart/form-data">
+          {% if current_folder %}
+            <input type="hidden" name="folder_id" value="{{ current_folder['id'] }}">
+          {% else %}
+            <input type="hidden" name="folder_id" value="">
+          {% endif %}
+
+          <label class="form-label small text-muted">Обрати файл</label>
+          <input class="form-control form-control-sm" type="file" name="photo" accept="image/*" required>
+          <div class="small text-muted mt-2">Формати: jpg, png, gif, webp</div>
         </form>
       </div>
 
       <div class="modal-footer border-0 pt-0">
         <button type="button" class="btn btn-light" data-bs-dismiss="modal">Скасувати</button>
-        <button type="submit" form="renameFolderForm" class="btn btn-dark">Зберегти</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-<div class="modal fade" id="deleteFolderModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content rounded-4 border-0 shadow">
-      <div class="modal-header border-0 pb-0">
-        <h5 class="modal-title">Видалити папку</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body pt-2">
-        <div class="text-muted">
-          Ви точно хочете видалити папку: <b id="deleteFolderName"></b> ?
-        </div>
-        <div class="small text-danger mt-2">
-          Увага: буде видалено також всі вкладені підпапки.
-        </div>
-        <form method="post" id="deleteFolderForm"></form>
-      </div>
-
-      <div class="modal-footer border-0 pt-0">
-        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Скасувати</button>
-        <button type="submit" form="deleteFolderForm" class="btn btn-danger">Видалити</button>
+        <button type="submit" form="uploadPhotoForm" class="btn btn-dark">Завантажити</button>
       </div>
     </div>
   </div>
@@ -198,40 +311,11 @@
 <script>
   const createModalEl = document.getElementById('createFolderModal');
   const createInputEl = document.getElementById('folderNameInput');
-  createModalEl.addEventListener('shown.bs.modal', function () {
-    createInputEl.value = "";
-    createInputEl.focus();
-  });
-
-  const renameModalEl = document.getElementById('renameFolderModal');
-  const renameInput = document.getElementById('renameFolderInput');
-  const renameForm = document.getElementById('renameFolderForm');
-
-  renameModalEl.addEventListener('show.bs.modal', function (event) {
-    const btn = event.relatedTarget;
-    const id = btn.getAttribute('data-folder-id');
-    const name = btn.getAttribute('data-folder-name');
-
-    renameInput.value = name;
-    renameForm.action = "/folders/rename/" + id;
-  });
-
-  renameModalEl.addEventListener('shown.bs.modal', function () {
-    renameInput.focus();
-    renameInput.select();
-  });
-
-  const deleteModalEl = document.getElementById('deleteFolderModal');
-  const deleteNameEl = document.getElementById('deleteFolderName');
-  const deleteForm = document.getElementById('deleteFolderForm');
-
-  deleteModalEl.addEventListener('show.bs.modal', function (event) {
-    const btn = event.relatedTarget;
-    const id = btn.getAttribute('data-folder-id');
-    const name = btn.getAttribute('data-folder-name');
-
-    deleteNameEl.textContent = name;
-    deleteForm.action = "/folders/delete/" + id;
-  });
+  if (createModalEl && createInputEl) {
+    createModalEl.addEventListener('shown.bs.modal', function () {
+      createInputEl.value = "";
+      createInputEl.focus();
+    });
+  }
 </script>
 {% endblock %}

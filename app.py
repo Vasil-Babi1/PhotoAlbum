@@ -1,15 +1,20 @@
 import sqlite3
+import uuid
 from pathlib import Path
 
-from flask import Flask, render_template, request, redirect, url_for, flash, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, abort, send_file
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = "CHANGE_ME_SECRET_KEY"  # потім винесемо в env
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "database.sqlite"
+UPLOAD_DIR = BASE_DIR / "uploads"
+
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 
 def get_db():
@@ -18,7 +23,14 @@ def get_db():
     return conn
 
 
+def allowed_file(filename: str) -> bool:
+    ext = Path(filename).suffix.lower()
+    return ext in ALLOWED_EXTENSIONS
+
+
 def init_db():
+    UPLOAD_DIR.mkdir(exist_ok=True)
+
     conn = get_db()
     cur = conn.cursor()
 
@@ -41,6 +53,28 @@ def init_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
     """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            folder_id INTEGER,
+            file_path TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            title TEXT,
+            mime_type TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+    try:
+        columns = cur.execute("PRAGMA table_info(photos);").fetchall()
+        col_names = [c[1] for c in columns]
+        if "title" not in col_names:
+            cur.execute("ALTER TABLE photos ADD COLUMN title TEXT;")
+            cur.execute("UPDATE photos SET title = original_name WHERE title IS NULL;")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
@@ -96,11 +130,33 @@ def delete_folder_recursive(conn, folder_id: int, user_id: int):
         "SELECT id FROM folders WHERE user_id = ? AND parent_id = ?",
         (user_id, folder_id)
     ).fetchall()
-
     for c in children:
         delete_folder_recursive(conn, c["id"], user_id)
 
+    photos = conn.execute(
+        "SELECT id, file_path FROM photos WHERE user_id = ? AND folder_id = ?",
+        (user_id, folder_id)
+    ).fetchall()
+    for p in photos:
+        fp = BASE_DIR / p["file_path"]
+        try:
+            if fp.exists():
+                fp.unlink()
+        except Exception:
+            pass
+        conn.execute("DELETE FROM photos WHERE id = ? AND user_id = ?", (p["id"], user_id))
+
     conn.execute("DELETE FROM folders WHERE id = ? AND user_id = ?", (folder_id, user_id))
+
+
+def get_photo_owned(photo_id: int, user_id: int):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM photos WHERE id = ? AND user_id = ?",
+        (photo_id, user_id)
+    ).fetchone()
+    conn.close()
+    return row
 
 
 @app.route("/")
@@ -202,14 +258,21 @@ def logout():
 @login_required
 def album():
     user_id = current_user.id
+
     conn = get_db()
     folders = conn.execute(
         "SELECT * FROM folders WHERE user_id = ? AND parent_id IS NULL ORDER BY created_at DESC",
         (user_id,)
     ).fetchall()
+
+    photos = conn.execute(
+        "SELECT * FROM photos WHERE user_id = ? AND folder_id IS NULL ORDER BY created_at DESC",
+        (user_id,)
+    ).fetchall()
+
     conn.close()
 
-    return render_template("album.html", folders=folders, current_folder=None, breadcrumbs=[])
+    return render_template("album.html", folders=folders, photos=photos, current_folder=None, breadcrumbs=[])
 
 
 @app.route("/album/<int:folder_id>")
@@ -225,10 +288,16 @@ def album_folder(folder_id):
         "SELECT * FROM folders WHERE user_id = ? AND parent_id = ? ORDER BY created_at DESC",
         (user_id, folder_id)
     ).fetchall()
+
+    photos = conn.execute(
+        "SELECT * FROM photos WHERE user_id = ? AND folder_id = ? ORDER BY created_at DESC",
+        (user_id, folder_id)
+    ).fetchall()
+
     conn.close()
 
     breadcrumbs = get_breadcrumbs(current_folder)
-    return render_template("album.html", folders=folders, current_folder=current_folder, breadcrumbs=breadcrumbs)
+    return render_template("album.html", folders=folders, photos=photos, current_folder=current_folder, breadcrumbs=breadcrumbs)
 
 
 @app.route("/folders/create", methods=["POST"])
@@ -306,6 +375,126 @@ def delete_folder(folder_id):
     conn.close()
 
     flash("Папку видалено разом з усіма вкладеними папками ✅", "success")
+    return redirect(request.referrer or url_for("album"))
+
+
+@app.route("/photos/upload", methods=["POST"])
+@login_required
+def upload_photo():
+    user_id = current_user.id
+
+    folder_id_raw = (request.form.get("folder_id") or "").strip()
+    folder_id = None
+    if folder_id_raw != "":
+        try:
+            folder_id = int(folder_id_raw)
+        except ValueError:
+            flash("Некоректна папка.", "error")
+            return redirect(request.referrer or url_for("album"))
+
+        if not get_folder_owned(folder_id, user_id):
+            flash("Немає доступу до цієї папки.", "error")
+            return redirect(url_for("album"))
+
+    file = request.files.get("photo")
+    if not file or file.filename == "":
+        flash("Оберіть файл.", "error")
+        return redirect(request.referrer or url_for("album"))
+
+    if not allowed_file(file.filename):
+        flash("Дозволені формати: jpg, jpeg, png, gif, webp.", "error")
+        return redirect(request.referrer or url_for("album"))
+
+    original_display_name = file.filename.strip()
+
+    safe_name = secure_filename(file.filename)
+    ext = Path(safe_name).suffix.lower()
+
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+
+    user_dir = UPLOAD_DIR / str(user_id)
+    user_dir.mkdir(exist_ok=True)
+
+    full_path = user_dir / unique_name
+    file.save(full_path)
+
+    rel_path = str(full_path.relative_to(BASE_DIR)).replace("\\", "/")
+    mime_type = file.mimetype
+
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO photos (user_id, folder_id, file_path, original_name, title, mime_type) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, folder_id, rel_path, original_display_name, original_display_name, mime_type)
+    )
+    conn.commit()
+    conn.close()
+
+    flash("Фото завантажено ✅", "success")
+    return redirect(request.referrer or url_for("album"))
+
+
+@app.route("/photos/file/<int:photo_id>")
+@login_required
+def photo_file(photo_id):
+    user_id = current_user.id
+    row = get_photo_owned(photo_id, user_id)
+    if not row:
+        abort(404)
+
+    full_path = BASE_DIR / row["file_path"]
+    if not full_path.exists():
+        abort(404)
+
+    return send_file(full_path, mimetype=row["mime_type"] or "application/octet-stream")
+
+
+@app.route("/photos/rename/<int:photo_id>", methods=["POST"])
+@login_required
+def rename_photo(photo_id):
+    user_id = current_user.id
+    row = get_photo_owned(photo_id, user_id)
+    if not row:
+        abort(404)
+
+    title = (request.form.get("title") or "").strip()
+    if title == "":
+        flash("Назва фото не може бути порожньою.", "error")
+        return redirect(request.referrer or url_for("album"))
+
+    conn = get_db()
+    conn.execute(
+        "UPDATE photos SET title = ? WHERE id = ? AND user_id = ?",
+        (title, photo_id, user_id)
+    )
+    conn.commit()
+    conn.close()
+
+    flash("Назву фото змінено ✅", "success")
+    return redirect(request.referrer or url_for("album"))
+
+
+@app.route("/photos/delete/<int:photo_id>", methods=["POST"])
+@login_required
+def delete_photo(photo_id):
+    user_id = current_user.id
+    row = get_photo_owned(photo_id, user_id)
+    if not row:
+        abort(404)
+
+    full_path = BASE_DIR / row["file_path"]
+    try:
+        if full_path.exists():
+            full_path.unlink()
+    except Exception:
+        pass
+
+    conn = get_db()
+    conn.execute("DELETE FROM photos WHERE id = ? AND user_id = ?", (photo_id, user_id))
+    conn.commit()
+    conn.close()
+
+    flash("Фото видалено ✅", "success")
     return redirect(request.referrer or url_for("album"))
 
 

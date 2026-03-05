@@ -9,4 +9,8 @@ venv/
 
 *.sqlite
 *.sqlite3
+database.sqlite
+
 instance/
+
+uploads/
