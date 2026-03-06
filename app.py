@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import uuid
 from pathlib import Path
@@ -6,6 +7,11 @@ from flask import Flask, render_template, request, redirect, url_for, flash, abo
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+
+try:
+    import boto3
+except Exception:
+    boto3 = None
 
 app = Flask(__name__)
 app.secret_key = "CHANGE_ME_SECRET_KEY"  # потім винесемо в env
@@ -26,6 +32,29 @@ def get_db():
 def allowed_file(filename: str) -> bool:
     ext = Path(filename).suffix.lower()
     return ext in ALLOWED_EXTENSIONS
+
+
+def r2_enabled() -> bool:
+    return (
+        boto3 is not None
+        and bool(os.environ.get("R2_ACCOUNT_ID"))
+        and bool(os.environ.get("R2_ACCESS_KEY_ID"))
+        and bool(os.environ.get("R2_SECRET_ACCESS_KEY"))
+        and bool(os.environ.get("R2_BUCKET"))
+    )
+
+
+def get_r2_client():
+    account_id = os.environ["R2_ACCOUNT_ID"]
+    endpoint_url = f"https://{account_id}.r2.cloudflarestorage.com"
+
+    return boto3.client(
+        service_name="s3",
+        endpoint_url=endpoint_url,
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
+    )
 
 
 def init_db():
@@ -62,17 +91,21 @@ def init_db():
             file_path TEXT NOT NULL,
             original_name TEXT NOT NULL,
             title TEXT,
+            storage TEXT,
             mime_type TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
     """)
 
     try:
-        columns = cur.execute("PRAGMA table_info(photos);").fetchall()
-        col_names = [c[1] for c in columns]
-        if "title" not in col_names:
+        cols = cur.execute("PRAGMA table_info(photos);").fetchall()
+        names = [c[1] for c in cols]
+        if "title" not in names:
             cur.execute("ALTER TABLE photos ADD COLUMN title TEXT;")
             cur.execute("UPDATE photos SET title = original_name WHERE title IS NULL;")
+        if "storage" not in names:
+            cur.execute("ALTER TABLE photos ADD COLUMN storage TEXT;")
+        cur.execute("UPDATE photos SET storage = 'local' WHERE storage IS NULL;")
     except Exception:
         pass
 
@@ -134,16 +167,27 @@ def delete_folder_recursive(conn, folder_id: int, user_id: int):
         delete_folder_recursive(conn, c["id"], user_id)
 
     photos = conn.execute(
-        "SELECT id, file_path FROM photos WHERE user_id = ? AND folder_id = ?",
+        "SELECT id, file_path, storage FROM photos WHERE user_id = ? AND folder_id = ?",
         (user_id, folder_id)
     ).fetchall()
+
+    s3 = get_r2_client() if r2_enabled() else None
+    bucket = os.environ.get("R2_BUCKET")
+
     for p in photos:
-        fp = BASE_DIR / p["file_path"]
-        try:
-            if fp.exists():
-                fp.unlink()
-        except Exception:
-            pass
+        storage = p["storage"] or "local"
+        if storage == "r2" and s3 and bucket:
+            try:
+                s3.delete_object(Bucket=bucket, Key=p["file_path"])
+            except Exception:
+                pass
+        else:
+            fp = BASE_DIR / p["file_path"]
+            try:
+                if fp.exists():
+                    fp.unlink()
+            except Exception:
+                pass
         conn.execute("DELETE FROM photos WHERE id = ? AND user_id = ?", (p["id"], user_id))
 
     conn.execute("DELETE FROM folders WHERE id = ? AND user_id = ?", (folder_id, user_id))
@@ -258,20 +302,16 @@ def logout():
 @login_required
 def album():
     user_id = current_user.id
-
     conn = get_db()
     folders = conn.execute(
         "SELECT * FROM folders WHERE user_id = ? AND parent_id IS NULL ORDER BY created_at DESC",
         (user_id,)
     ).fetchall()
-
     photos = conn.execute(
         "SELECT * FROM photos WHERE user_id = ? AND folder_id IS NULL ORDER BY created_at DESC",
         (user_id,)
     ).fetchall()
-
     conn.close()
-
     return render_template("album.html", folders=folders, photos=photos, current_folder=None, breadcrumbs=[])
 
 
@@ -288,17 +328,14 @@ def album_folder(folder_id):
         "SELECT * FROM folders WHERE user_id = ? AND parent_id = ? ORDER BY created_at DESC",
         (user_id, folder_id)
     ).fetchall()
-
     photos = conn.execute(
         "SELECT * FROM photos WHERE user_id = ? AND folder_id = ? ORDER BY created_at DESC",
         (user_id, folder_id)
     ).fetchall()
-
     conn.close()
 
     breadcrumbs = get_breadcrumbs(current_folder)
     return render_template("album.html", folders=folders, photos=photos, current_folder=current_folder, breadcrumbs=breadcrumbs)
-
 
 @app.route("/folders/create", methods=["POST"])
 @login_required
@@ -319,8 +356,7 @@ def create_folder():
             flash("Некоректний parent_id.", "error")
             return redirect(url_for("album"))
 
-        parent_folder = get_folder_owned(parent_id, user_id)
-        if not parent_folder:
+        if not get_folder_owned(parent_id, user_id):
             flash("Немає доступу до цієї папки.", "error")
             return redirect(url_for("album"))
 
@@ -340,8 +376,7 @@ def create_folder():
 @login_required
 def rename_folder(folder_id):
     user_id = current_user.id
-    folder = get_folder_owned(folder_id, user_id)
-    if not folder:
+    if not get_folder_owned(folder_id, user_id):
         abort(404)
 
     new_name = (request.form.get("name") or "").strip()
@@ -365,8 +400,7 @@ def rename_folder(folder_id):
 @login_required
 def delete_folder(folder_id):
     user_id = current_user.id
-    folder = get_folder_owned(folder_id, user_id)
-    if not folder:
+    if not get_folder_owned(folder_id, user_id):
         abort(404)
 
     conn = get_db()
@@ -374,7 +408,7 @@ def delete_folder(folder_id):
     conn.commit()
     conn.close()
 
-    flash("Папку видалено разом з усіма вкладеними папками ✅", "success")
+    flash("Папку видалено разом з вкладеними папками ✅", "success")
     return redirect(request.referrer or url_for("album"))
 
 
@@ -406,26 +440,41 @@ def upload_photo():
         return redirect(request.referrer or url_for("album"))
 
     original_display_name = file.filename.strip()
-
     safe_name = secure_filename(file.filename)
     ext = Path(safe_name).suffix.lower()
 
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-
-    user_dir = UPLOAD_DIR / str(user_id)
-    user_dir.mkdir(exist_ok=True)
-
-    full_path = user_dir / unique_name
-    file.save(full_path)
-
-    rel_path = str(full_path.relative_to(BASE_DIR)).replace("\\", "/")
+    storage = "local"
+    file_path_or_key = ""
     mime_type = file.mimetype
+
+    if r2_enabled():
+        storage = "r2"
+        bucket = os.environ["R2_BUCKET"]
+        s3 = get_r2_client()
+
+        key = f"users/{user_id}/{uuid.uuid4().hex}{ext}"
+        s3.upload_fileobj(
+            file.stream,
+            bucket,
+            key,
+            ExtraArgs={"ContentType": mime_type} if mime_type else None
+        )
+        file_path_or_key = key
+    else:
+        user_dir = UPLOAD_DIR / str(user_id)
+        user_dir.mkdir(exist_ok=True)
+
+        unique_name = f"{uuid.uuid4().hex}{ext}"
+        full_path = user_dir / unique_name
+        file.save(full_path)
+
+        file_path_or_key = str(full_path.relative_to(BASE_DIR)).replace("\\", "/")
 
     conn = get_db()
     conn.execute(
-        "INSERT INTO photos (user_id, folder_id, file_path, original_name, title, mime_type) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (user_id, folder_id, rel_path, original_display_name, original_display_name, mime_type)
+        "INSERT INTO photos (user_id, folder_id, file_path, original_name, title, storage, mime_type) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (user_id, folder_id, file_path_or_key, original_display_name, original_display_name, storage, mime_type)
     )
     conn.commit()
     conn.close()
@@ -441,6 +490,23 @@ def photo_file(photo_id):
     row = get_photo_owned(photo_id, user_id)
     if not row:
         abort(404)
+
+    storage = row["storage"] or "local"
+
+    if storage == "r2":
+        if not r2_enabled():
+            abort(500)
+
+        bucket = os.environ["R2_BUCKET"]
+        s3 = get_r2_client()
+        expires = int(os.environ.get("R2_URL_EXPIRES", "600"))
+
+        url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": row["file_path"]},
+            ExpiresIn=expires
+        )
+        return redirect(url)
 
     full_path = BASE_DIR / row["file_path"]
     if not full_path.exists():
@@ -482,12 +548,22 @@ def delete_photo(photo_id):
     if not row:
         abort(404)
 
-    full_path = BASE_DIR / row["file_path"]
-    try:
-        if full_path.exists():
-            full_path.unlink()
-    except Exception:
-        pass
+    storage = row["storage"] or "local"
+
+    if storage == "r2":
+        if r2_enabled():
+            try:
+                s3 = get_r2_client()
+                s3.delete_object(Bucket=os.environ["R2_BUCKET"], Key=row["file_path"])
+            except Exception:
+                pass
+    else:
+        fp = BASE_DIR / row["file_path"]
+        try:
+            if fp.exists():
+                fp.unlink()
+        except Exception:
+            pass
 
     conn = get_db()
     conn.execute("DELETE FROM photos WHERE id = ? AND user_id = ?", (photo_id, user_id))
